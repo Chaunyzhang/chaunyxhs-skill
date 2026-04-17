@@ -5,8 +5,7 @@
 Turn a Xiaohongshu video note into:
 - video metadata
 - downloaded local media (audio first, video only as fallback)
-- transcript
-- cleaned draft copy
+- page diagnostics
 
 ## Proven flow
 
@@ -18,8 +17,7 @@ Turn a Xiaohongshu video note into:
    - video fallback from `note.noteDetailMap.<noteId>.note.video.media.stream.h264[].masterUrl`
 5. Choose the best audio candidate first. Only choose a video stream when audio is unavailable and fallback is explicitly enabled.
 6. Download the smallest necessary media URL.
-7. Pass the file into `local-transcribe/scripts/transcribe_local.py`.
-8. Return combined JSON.
+7. Return combined JSON.
 
 ## Why this works
 
