@@ -17,6 +17,8 @@ Always do state checking before real work:
 python scripts/status.py --json
 ```
 
+Do not pick a workflow until the state check is fully ready.
+
 If the result is not fully ready, repair in this order:
 
 1. install binaries

@@ -1,5 +1,9 @@
 # Chauny XHS Skill
 
+If another model will operate this repo, read this first:
+
+- `references/OPERATIONS-MANUAL.md`
+
 Read this first if another model will operate the repo:
 
 - `references/OPERATIONS-MANUAL.md`
@@ -104,6 +108,8 @@ You want to see:
 - `cookies_exist: true`
 - `mcp_running: true`
 - `xhs_logged_in: true`
+
+Do not continue into research, media extraction, or transcription until the status check is fully ready.
 
 ## Research workflow
 
