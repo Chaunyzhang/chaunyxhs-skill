@@ -1,12 +1,32 @@
 # Chauny XHS Skill
 
+Read this first if another model will operate the repo:
+
+- `references/OPERATIONS-MANUAL.md`
+
 A consolidated Xiaohongshu skill focused on three stable blocks:
 
 1. session bootstrap
 2. research workflow
 3. media extraction workflow
+4. transcription workflow
 
 The design goal is not to hardcode one anti-bot path forever. Instead, the repo keeps a stable local core and treats `xiaohongshu-mcp` as an adapter that can evolve over time.
+
+## Safety default
+
+This aggregated repo is read-mostly by default.
+
+The following active operations are considered high-risk and are intentionally not exposed as first-class workflows here:
+
+- publish content
+- publish video
+- post comment
+- reply comment
+- like / unlike
+- favorite / unfavorite
+
+They remain possible in upstream MCP, but this repo does not treat them as default safe workflows because they are much easier to trigger risk controls.
 
 ## What this repo can do today
 
@@ -23,6 +43,10 @@ The design goal is not to hardcode one anti-bot path forever. Instead, the repo 
   - prefer audio extraction
   - fall back to video only when explicitly allowed
   - download the smallest usable media file
+- Run a DashScope transcription workflow:
+  - accept a local audio file directly
+  - accept a public audio URL directly
+  - extract audio from a local video file first, then transcribe
 
 ## Why this shape is more stable
 
@@ -130,6 +154,34 @@ python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "./out" --allow-v
 python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "./out" --headless --wait-ms 8000
 ```
 
+## Transcription workflow
+
+### Local audio file
+
+```bash
+python scripts/xhs_transcribe.py "D:/path/to/audio.mp3"
+```
+
+### Public audio URL
+
+```bash
+python scripts/xhs_transcribe.py "https://example.com/audio.wav"
+```
+
+### Local video file
+
+```bash
+python scripts/xhs_transcribe.py "D:/path/to/video.mp4"
+```
+
+For local video files, the script extracts audio locally first and then sends the local audio file to DashScope.
+
+### Model guidance
+
+- Public audio URLs use DashScope file transcription with `paraformer-v2`
+- Local audio files use DashScope realtime recognition with `paraformer-realtime-v2`
+- Local video files are converted to local audio first, then recognized with `paraformer-realtime-v2`
+
 ## Weak-model execution recipe
 
 If a weaker model is operating this repo, it should follow this order exactly:
@@ -140,8 +192,9 @@ If a weaker model is operating this repo, it should follow this order exactly:
 4. If MCP is not running, run `python scripts/start.py`
 5. For research tasks, run `python scripts/xhs_research.py ...`
 6. For media tasks, run `python scripts/xhs_video_pipeline.py ...`
-7. If research search fails, retry once with `--search-provider web`
-8. If media extraction says `audio_not_found`, retry once with `--allow-video-fallback`
+7. For transcription tasks, run `python scripts/xhs_transcribe.py ...`
+8. If research search fails, retry once with `--search-provider web`
+9. If media extraction says `audio_not_found`, retry once with `--allow-video-fallback`
 
 ## File map
 
@@ -152,6 +205,7 @@ If a weaker model is operating this repo, it should follow this order exactly:
 - `scripts/status.py`: health snapshot
 - `scripts/xhs_research.py`: research workflow
 - `scripts/xhs_video_pipeline.py`: media extraction workflow
+- `scripts/xhs_transcribe.py`: DashScope transcription workflow
 
 ## Current limitations
 

@@ -23,6 +23,11 @@
    - Return the page title.
    - Return cookie visibility hints so failures are easier to debug on another machine.
 
+## Default policy
+
+Keep the aggregated skill read-mostly by default.
+Do not promote publishing or social interactions into default workflows unless there is a dedicated safety gate for them.
+
 ## What is still not fully merged
 
 This repository now contains the stable shared core, the research workflow,
