@@ -2,202 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import requests
-from playwright.sync_api import sync_playwright
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-
-def extract_note_id(url: str) -> str:
-    for marker in ("/explore/", "/discovery/item/"):
-        if marker in url:
-            return url.split(marker, 1)[1].split("?", 1)[0].split("/", 1)[0]
-    return ""
-
-
-def default_cookies_path() -> str:
-    home = Path.home()
-    candidates = [
-        home / ".local" / "share" / "xhs-research" / "cookies.json",
-        home / ".local" / "share" / "xiaohongshu-mcp" / "cookies.json",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    return ""
-
-
-def load_cookies(context, cookies_path: str | None) -> int:
-    if not cookies_path:
-        return 0
-    path = Path(cookies_path).expanduser()
-    if not path.is_file():
-        return 0
-
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return 0
-
-    if not isinstance(raw, list):
-        return 0
-
-    cookies = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        cookie = {
-            "name": item.get("name", ""),
-            "value": item.get("value", ""),
-            "domain": item.get("domain", ""),
-            "path": item.get("path", "/"),
-        }
-        if not cookie["name"] or not cookie["domain"]:
-            continue
-        if isinstance(item.get("expires"), (int, float)) and item["expires"] > 0:
-            cookie["expires"] = item["expires"]
-        if "httpOnly" in item:
-            cookie["httpOnly"] = bool(item["httpOnly"])
-        if "secure" in item:
-            cookie["secure"] = bool(item["secure"])
-        if item.get("sameSite") in {"Strict", "Lax", "None"}:
-            cookie["sameSite"] = item["sameSite"]
-        cookies.append(cookie)
-
-    if not cookies:
-        return 0
-
-    context.add_cookies(cookies)
-    return len(cookies)
-
-
-def extract_video_info_from_page(
-    url: str,
-    user_data_dir: str | None = None,
-    cdp_url: str | None = None,
-    cookies_path: str | None = None,
-    headless: bool = False,
-    wait_ms: int = 5000,
-) -> dict:
-    with sync_playwright() as p:
-        browser = None
-        context = None
-        page = None
-        created_temp_page = False
-
-        if cdp_url:
-            browser = p.chromium.connect_over_cdp(cdp_url)
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
-            matches = [candidate for candidate in context.pages if "xiaohongshu.com" in (candidate.url or "")]
-            page = matches[0] if matches else (context.pages[0] if context.pages else context.new_page())
-            created_temp_page = not bool(matches or context.pages[:-1])
-        else:
-            launch_args = {"headless": headless}
-            if user_data_dir:
-                context = p.chromium.launch_persistent_context(user_data_dir=user_data_dir, **launch_args)
-            else:
-                browser = p.chromium.launch(**launch_args)
-                context = browser.new_context()
-                load_cookies(context, cookies_path)
-            page = context.new_page()
-            created_temp_page = True
-
-        if page.url != url:
-            page.goto(url, wait_until="domcontentloaded", timeout=120000)
-        page.wait_for_timeout(wait_ms)
-
-        data = page.evaluate(
-            """() => {
-                const state = window.__INITIAL_STATE__ || {};
-                const noteId = location.pathname.includes('/explore/')
-                    ? location.pathname.split('/explore/')[1]?.split('?')[0]
-                    : location.pathname.includes('/discovery/item/')
-                        ? location.pathname.split('/discovery/item/')[1]?.split('?')[0]
-                        : '';
-                const detail = state?.note?.noteDetailMap?.[noteId]?.note || null;
-                if (!detail) {
-                    return {
-                        ok: false,
-                        noteId,
-                        keys: Object.keys(state || {}),
-                        finalUrl: location.href,
-                        pageTitle: document.title || '',
-                        documentCookieLength: (document.cookie || '').length,
-                    };
-                }
-
-                const streams = detail?.video?.media?.stream?.h264 || [];
-                const audioInfo = detail?.video?.media?.audioStream || detail?.video?.media?.audio || detail?.video?.audio || null;
-                const audioCandidates = [];
-
-                const pushCandidate = (candidateUrl, meta = {}) => {
-                    if (!candidateUrl || typeof candidateUrl !== 'string') return;
-                    audioCandidates.push({
-                        url: candidateUrl,
-                        avgBitrate: meta.avgBitrate || 0,
-                        format: meta.format || '',
-                        qualityType: meta.qualityType || '',
-                        size: meta.size || 0,
-                    });
-                };
-
-                if (Array.isArray(audioInfo)) {
-                    audioInfo.forEach(item => pushCandidate(item?.masterUrl || item?.backupUrl || item?.url || '', item || {}));
-                } else if (audioInfo && typeof audioInfo === 'object') {
-                    pushCandidate(audioInfo.masterUrl || audioInfo.backupUrl || audioInfo.url || '', audioInfo);
-                    if (Array.isArray(audioInfo.streams)) {
-                        audioInfo.streams.forEach(item => pushCandidate(item?.masterUrl || item?.backupUrl || item?.url || '', item || {}));
-                    }
-                    if (Array.isArray(audioInfo.list)) {
-                        audioInfo.list.forEach(item => pushCandidate(item?.masterUrl || item?.backupUrl || item?.url || '', item || {}));
-                    }
-                }
-
-                return {
-                    ok: true,
-                    noteId,
-                    title: detail.title || '',
-                    desc: detail.desc || '',
-                    author: detail.user?.nickname || '',
-                    likes: detail.interactInfo?.likedCount || '',
-                    collects: detail.interactInfo?.collectedCount || '',
-                    comments: detail.interactInfo?.commentCount || '',
-                    duration: detail.video?.media?.duration || 0,
-                    streams: streams.map((stream, index) => ({
-                        index,
-                        masterUrl: stream.masterUrl || '',
-                        avgBitrate: stream.avgBitrate || 0,
-                        width: stream.width || 0,
-                        height: stream.height || 0,
-                    })),
-                    audio_candidates: audioCandidates,
-                    final_url: location.href,
-                    page_title: document.title || '',
-                    document_cookie_length: (document.cookie || '').length,
-                };
-            }"""
-        )
-
-        if cdp_url:
-            if created_temp_page and page:
-                try:
-                    page.close()
-                except Exception:
-                    pass
-            if browser:
-                try:
-                    browser.close()
-                except Exception:
-                    pass
-        else:
-            context.close()
-        return data
+from xhs_core import extract_note_id, extract_note_media, normalize_note_url, preferred_cookies_path
 
 
 def pick_best_stream(streams: list[dict]) -> dict | None:
@@ -226,17 +35,17 @@ def main() -> int:
     parser.add_argument("--output-dir", default=str(Path.cwd()))
     parser.add_argument("--user-data-dir", default="")
     parser.add_argument("--cdp-url", default="")
-    parser.add_argument("--cookies-path", default=default_cookies_path())
+    parser.add_argument("--cookies-path", default=preferred_cookies_path())
     parser.add_argument("--allow-video-fallback", action="store_true")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--wait-ms", type=int, default=5000)
     args = parser.parse_args()
 
-    info = extract_video_info_from_page(
-        args.url,
-        args.user_data_dir or None,
-        args.cdp_url or None,
-        args.cookies_path or None,
+    source_url = normalize_note_url(args.url)
+    info = extract_note_media(
+        source_url,
+        user_data_dir=args.user_data_dir or None,
+        cdp_url=args.cdp_url or None,
         headless=args.headless,
         wait_ms=max(args.wait_ms, 0),
     )
@@ -252,7 +61,7 @@ def main() -> int:
     )
     stream = pick_best_stream(info.get("streams", []))
 
-    note_id = info.get("noteId") or extract_note_id(args.url) or "xhs-video"
+    note_id = info.get("noteId") or extract_note_id(source_url) or "xhs-video"
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -297,7 +106,7 @@ def main() -> int:
 
     payload = {
         "success": True,
-        "source_url": args.url,
+        "source_url": source_url,
         "note": {
             "note_id": note_id,
             "title": info.get("title", ""),
