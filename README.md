@@ -30,6 +30,19 @@ The design goal is not to hardcode one anti-bot path forever. Instead, the repo 
 - The workflow scripts do not depend on one exact upstream MCP response shape
 - Existing cookies and binaries from older setups are reused automatically
 - The scripts print machine-readable JSON where it matters so weaker models can keep going
+- The shared core applies conservative human-like pacing, retry backoff, and risk-signal detection
+
+## Stability pacing
+
+This repo intentionally adds light human-like pacing:
+
+- small random waits before and after page loads
+- serialized request pacing for sensitive operations
+- light scroll behavior on web-search pages
+- backoff jitter on retries
+- risk-hint detection for pages that look like security checks or temporary blocks
+
+This is for stability and lower operational burstiness, not for aggressive anti-detection tricks.
 
 ## Install
 
@@ -145,6 +158,7 @@ If a weaker model is operating this repo, it should follow this order exactly:
 - Direct `/explore/<id>` URLs are less reliable than URLs with `xsec_token`
 - MCP search may time out on some machines or IP ranges
 - Research detail fetching still benefits from MCP staying compatible upstream
+- Risk detection is heuristic and intentionally conservative
 
 ## Long-term compatibility rule
 

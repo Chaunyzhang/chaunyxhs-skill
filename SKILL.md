@@ -77,6 +77,7 @@ python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "<output_dir>" --
 5. Prefer URLs that already contain `xsec_token`
 6. Prefer page-state extraction, not blob URLs
 7. Return JSON or file paths exactly as produced by the scripts
+8. Do not remove the built-in pacing waits; they are part of the stability strategy
 
 ## Output expectations
 
@@ -89,3 +90,4 @@ python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "<output_dir>" --
 ## Important note
 
 This repo is intentionally built so that future `xiaohongshu-mcp` updates mostly require changes in `scripts/xhs_core.py`, not in every workflow script.
+The shared core also contains conservative human-like pacing and risk guards; keep those in the core, not scattered across workflows.

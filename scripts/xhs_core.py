@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import random
 import stat
 import subprocess
 import sys
@@ -77,6 +78,27 @@ FALLBACK_SUFFIXES = {
 
 STOP_WORDS = frozenset("的 了 在 是 我 你 他 她 它 们 这 那 有 不 也 和 与 及 或 但 如果 虽然 因为 所以".split() + list("的了在是"))
 
+PACE_PROFILE = {
+    "page_pre_wait": (0.35, 0.95),
+    "page_post_wait": (1.2, 2.6),
+    "search_scroll_wait": (0.45, 1.1),
+    "detail_gap": (0.8, 1.8),
+    "http_gap": (0.35, 1.0),
+    "retry_backoff_jitter": (0.6, 1.6),
+}
+
+RISK_HINTS = [
+    "安全限制",
+    "验证",
+    "频繁",
+    "风险",
+    "稍后再试",
+    "请完成验证",
+    "当前笔记暂时无法浏览",
+]
+
+_LAST_ACTION_TS: dict[str, float] = {}
+
 
 def ok(msg: str) -> None:
     print(f"  [OK] {msg}")
@@ -97,6 +119,52 @@ def info(msg: str) -> None:
 def log(msg: str) -> None:
     sys.stderr.write(f"[chaunyxhs] {msg}\n")
     sys.stderr.flush()
+
+
+def random_pause(bucket: str, minimum: float | None = None) -> float:
+    low, high = PACE_PROFILE[bucket]
+    duration = random.uniform(low, high)
+    if minimum is not None:
+        duration = max(duration, minimum)
+    time.sleep(duration)
+    return duration
+
+
+def paced_gate(name: str, minimum_interval: float) -> float:
+    now = time.time()
+    previous = _LAST_ACTION_TS.get(name, 0.0)
+    wait_for = max(0.0, minimum_interval - (now - previous))
+    if wait_for > 0:
+        time.sleep(wait_for + random.uniform(0.08, 0.35))
+    _LAST_ACTION_TS[name] = time.time()
+    return wait_for
+
+
+def human_page_settle(page, wait_ms: int, light_scroll: bool = False) -> None:
+    random_pause("page_pre_wait")
+    page.wait_for_timeout(wait_ms)
+    random_pause("page_post_wait")
+
+    if light_scroll:
+        try:
+            page.mouse.move(random.randint(180, 420), random.randint(180, 520), steps=random.randint(12, 28))
+            for _ in range(random.randint(1, 2)):
+                page.mouse.wheel(0, random.randint(300, 720))
+                random_pause("search_scroll_wait")
+            if random.random() < 0.45:
+                page.mouse.wheel(0, -random.randint(120, 260))
+                random_pause("search_scroll_wait", minimum=0.25)
+        except Exception:
+            pass
+
+
+def detect_risk_state(final_url: str, page_title: str, extra_text: str = "") -> dict[str, Any]:
+    haystack = " ".join([final_url or "", page_title or "", extra_text or ""])
+    matched = [hint for hint in RISK_HINTS if hint in haystack]
+    return {
+        "risk_detected": bool(matched),
+        "risk_hints": matched,
+    }
 
 
 def ensure_directories() -> None:
@@ -174,6 +242,8 @@ def http_get_json(url: str, timeout: int = 5) -> dict[str, Any] | None:
 
 
 def http_post_json(url: str, payload: dict[str, Any], timeout: int = 60, retries: int = 2) -> dict[str, Any] | None:
+    paced_gate("http_post_json", 0.9)
+    random_pause("http_gap")
     data = json.dumps(payload).encode("utf-8")
     for attempt in range(retries):
         try:
@@ -189,7 +259,7 @@ def http_post_json(url: str, payload: dict[str, Any], timeout: int = 60, retries
             if attempt == retries - 1:
                 log(f"POST failed for {url}: {exc}")
                 return None
-            time.sleep(1 + attempt)
+            time.sleep((1 + attempt) + random.uniform(*PACE_PROFILE["retry_backoff_jitter"]))
     return None
 
 
@@ -370,12 +440,16 @@ def search_notes_web(keyword: str, wait_ms: int = 6000) -> list[dict[str, Any]]:
     search_url = f"https://www.xiaohongshu.com/search_result?keyword={urllib.parse.quote(keyword)}"
     try:
         with sync_playwright() as p:
+            paced_gate("web_search_navigation", 1.6)
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             load_cookies(context)
             page = context.new_page()
             page.goto(search_url, wait_until="domcontentloaded", timeout=120000)
-            page.wait_for_timeout(wait_ms)
+            human_page_settle(page, wait_ms, light_scroll=True)
+            risk_state = detect_risk_state(page.url, page.title())
+            if risk_state["risk_detected"]:
+                log(f'web search risk hints for "{keyword}": {risk_state["risk_hints"]}')
             items = page.evaluate(
                 """() => {
                     const notes = [];
@@ -525,8 +599,9 @@ def extract_note_media(
             created_temp_page = True
 
         if page.url != url:
+            paced_gate("media_navigation", 1.3)
             page.goto(url, wait_until="domcontentloaded", timeout=120000)
-        page.wait_for_timeout(wait_ms)
+        human_page_settle(page, wait_ms, light_scroll=False)
 
         data = page.evaluate(
             """() => {
@@ -599,6 +674,11 @@ def extract_note_media(
                 };
             }"""
         )
+        risk_state = detect_risk_state(
+            data.get("final_url", data.get("finalUrl", page.url)),
+            data.get("page_title", data.get("pageTitle", page.title())),
+        )
+        data.update(risk_state)
 
         if cdp_url:
             if created_temp_page and page:
@@ -749,6 +829,7 @@ def fetch_research_details(items: list[dict[str, Any]], top: int, depth: str) ->
     comment_limit = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["deep"])["comment_top"]
     enriched = []
     for item in items[:top]:
+        paced_gate("detail_fetch", 1.1)
         detail = get_feed_detail(item["feed_id"], item["xsec_token"])
         if not detail:
             item["content"] = ""
@@ -789,7 +870,7 @@ def fetch_research_details(items: list[dict[str, Any]], top: int, depth: str) ->
                 )
         item["top_comments"] = top_comments
         enriched.append(item)
-        time.sleep(0.2)
+        random_pause("detail_gap")
     return enriched
 
 

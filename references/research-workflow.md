@@ -24,6 +24,7 @@ Turn a research topic into:
 5. Score by relevance, recency, and engagement
 6. Fetch details for the top notes
 7. Render Markdown or JSON
+8. Preserve built-in pacing, retry jitter, and risk guards
 
 ## Stability principle
 

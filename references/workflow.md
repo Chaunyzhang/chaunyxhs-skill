@@ -18,6 +18,7 @@ Turn a Xiaohongshu video note into:
 6. Fall back to video only when explicitly allowed
 7. Download the smallest useful media asset
 8. Return combined JSON
+9. Preserve the built-in pacing and do not replace it with tight loops
 
 ## Why this is preferred
 
