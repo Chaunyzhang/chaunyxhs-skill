@@ -3,8 +3,9 @@
 ## Current working blocks
 
 1. Session bootstrap
-   - Reuse cookies exported by the local `xiaohongshu-mcp` or `xhs-research` flow.
+   - Reuse cookies exported by the local `xiaohongshu-mcp` or older `xhs-research` flow.
    - Keep browser reuse as the first choice.
+   - Normalize storage into `~/.local/share/chaunyxhs-skill`.
 
 2. Media extraction
    - Open a note page with a valid session.
@@ -12,15 +13,25 @@
    - Prefer audio candidates first.
    - Fall back to video streams only when explicitly allowed.
 
-3. Diagnostics
+3. Research workflow
+   - Search through the web layer when MCP search is unstable.
+   - Fetch note details through MCP when available.
+   - Keep report rendering independent from the search adapter.
+
+4. Diagnostics
    - Return the final URL after redirects.
    - Return the page title.
    - Return cookie visibility hints so failures are easier to debug on another machine.
 
-## Why this repo is still only one block
+## What is still not fully merged
 
-This repository currently stores the media-extraction workflow only.
-The research workflow and the MCP bootstrap workflow still live in separate repos.
+This repository now contains the stable shared core, the research workflow,
+and the media-extraction workflow.
+
+What is still external:
+
+- upstream `xiaohongshu-mcp`
+- any future posting or monitoring workflows that may be split into their own repos today
 
 ## Recommended future merge shape
 

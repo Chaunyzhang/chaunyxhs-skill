@@ -1,39 +1,30 @@
-# Workflow
+# Media Workflow
 
 ## Goal
 
 Turn a Xiaohongshu video note into:
-- video metadata
-- downloaded local media (audio first, video only as fallback)
+
+- note metadata
+- downloaded local media
 - page diagnostics
 
-## Proven flow
+## Proven order
 
-1. Reuse an already logged-in Xiaohongshu browser context when possible.
-2. Open the note page.
-3. Read `window.__INITIAL_STATE__`.
-4. Locate media fields in page state. Prefer audio first, then fallback to video only if explicitly allowed:
-   - audio candidates from fields like `note.noteDetailMap.<noteId>.note.video.media.audioStream` / related audio objects
-   - video fallback from `note.noteDetailMap.<noteId>.note.video.media.stream.h264[].masterUrl`
-5. Choose the best audio candidate first. Only choose a video stream when audio is unavailable and fallback is explicitly enabled.
-6. Download the smallest necessary media URL.
-7. Return combined JSON.
+1. Reuse an already logged-in session
+2. Normalize the note URL
+3. Open the page
+4. Read `window.__INITIAL_STATE__`
+5. Prefer audio candidates first
+6. Fall back to video only when explicitly allowed
+7. Download the smallest useful media asset
+8. Return combined JSON
 
-## Why this works
+## Why this is preferred
 
-The browser player often exposes only a `blob:` URL.
-The real downloadable media URL lives in the page state / player config.
+- The visible player may expose only `blob:` URLs
+- The stable downloadable media URLs live in page state
+- Audio-first reduces bandwidth and failure surface
 
-So the correct extraction order is:
-- page state first
-- player config second
-- blob URL never as the primary source
+## Input recommendation
 
-For text-first workflows, the correct media preference is:
-- audio first
-- video only as fallback
-
-## Scope
-
-This skill currently proves the flow on Xiaohongshu only.
-The same general pattern can later be ported to Bilibili and Douyin, but field names differ by platform.
+Prefer note URLs that already contain `xsec_token`.

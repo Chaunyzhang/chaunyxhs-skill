@@ -1,46 +1,91 @@
 ---
 name: chaunyxhs-skill
-description: 小红书视频媒体提取技能。用于从小红书视频笔记页面中按 F12 / 页面状态思路优先提取真实音频地址，下载最小必要媒体到本地，并输出视频信息、媒体文件路径与页面诊断结果。默认不下载完整视频，只有显式允许时才回退到视频流。适用于用户要处理小红书视频、提取真实媒体地址、下载音频、或把视频笔记做成后续可复用素材时使用。
+description: 一个聚合版小红书技能，包含安装与登录、调研报告、视频媒体提取三块能力。优先复用已登录会话，优先走稳定的网页与页面状态路径，并把 xiaohongshu-mcp 作为可演进适配层而不是唯一后端。适合让弱模型按步骤执行：先检查状态，再安装，再登录，再选择调研或媒体提取工作流。
 ---
 
 # Chauny XHS Skill
 
-## Quick start
+## First rule
 
-1. Reuse an already logged-in Xiaohongshu browser session whenever possible.
-2. Read `references/workflow.md` before changing the extraction path.
-3. Run `scripts/xhs_video_pipeline.py` with a Xiaohongshu video note URL.
-4. Default to audio-first extraction. Only allow video fallback when explicitly needed.
-5. Return the combined JSON result.
-
-## Command
+Always do state checking before real work:
 
 ```bash
-python scripts/xhs_video_pipeline.py "<xiaohongshu_video_url>" --output-dir "<optional_output_dir>"
+python scripts/status.py --json
 ```
 
-Optional:
+If the result is not fully ready, repair in this order:
+
+1. install binaries
+```bash
+python scripts/setup.py
+```
+
+2. login
+```bash
+python scripts/login.py
+```
+
+3. start the MCP service if needed
+```bash
+python scripts/start.py
+```
+
+## Workflow A: research report
+
+Use this when the user wants topic research, comparisons, pain points, product analysis, or recommendation summaries from Xiaohongshu.
+
+Preferred command:
 
 ```bash
-python scripts/xhs_video_pipeline.py "<xiaohongshu_video_url>" --output-dir "<optional_output_dir>" --user-data-dir "<playwright_user_data_dir>"
-
-# only when audio extraction is unavailable and video fallback is explicitly allowed
-python scripts/xhs_video_pipeline.py "<xiaohongshu_video_url>" --output-dir "<optional_output_dir>" --allow-video-fallback
+python scripts/xhs_research.py --keywords "<kw1>,<kw2>,<kw3>" --quick --top 3
 ```
 
-## What this skill does
+If the user only gives a topic:
 
-- Extract note metadata from page state
-- Find the real audio URL first, and only fall back to video when explicitly allowed
-- Download the smallest necessary local media file
-- Return:
+```bash
+python scripts/xhs_research.py "<topic>" --deep
+```
+
+If search is unstable, force the stable fallback:
+
+```bash
+python scripts/xhs_research.py "<topic>" --search-provider web
+```
+
+## Workflow B: video media extraction
+
+Use this when the user wants to extract real media URLs, download audio, or fall back to downloading the video file.
+
+Preferred command:
+
+```bash
+python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "<output_dir>"
+```
+
+If audio is unavailable and the user allows video fallback:
+
+```bash
+python scripts/xhs_video_pipeline.py "<note_url>" --output-dir "<output_dir>" --allow-video-fallback
+```
+
+## Execution rules for weaker models
+
+1. Do not skip `status.py`
+2. Do not assume login is still valid without checking
+3. For research, retry once with `--search-provider web` before declaring failure
+4. For media extraction, retry once with `--allow-video-fallback` before declaring failure
+5. Prefer URLs that already contain `xsec_token`
+6. Prefer page-state extraction, not blob URLs
+7. Return JSON or file paths exactly as produced by the scripts
+
+## Output expectations
+
+- Research workflow should return a report or JSON payload
+- Media workflow should return:
   - note info
   - local media path
   - page diagnostics
 
-## Notes
+## Important note
 
-- Prefer page-state extraction, not blob URL extraction.
-- Prefer audio-first extraction to reduce bandwidth and avoid unnecessary video downloads.
-- Keep browser reuse and login reuse as the default path.
-- If extraction fails, inspect `window.__INITIAL_STATE__` first before trying other approaches.
+This repo is intentionally built so that future `xiaohongshu-mcp` updates mostly require changes in `scripts/xhs_core.py`, not in every workflow script.
