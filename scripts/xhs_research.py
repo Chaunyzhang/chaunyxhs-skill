@@ -10,6 +10,7 @@ from datetime import datetime
 from xhs_core import (
     DEPTH_CONFIG,
     PUBLISH_TIME_MAP,
+    capability_gate,
     check_mcp_health,
     check_mcp_login,
     classify_query,
@@ -51,6 +52,11 @@ def search_multi(keywords: list[str], publish_time: str, search_provider: str) -
 
 
 def main() -> None:
+    gate = capability_gate("research")
+    if not gate.get("ready"):
+        print(json.dumps({"success": False, "message": gate.get("message"), "prepare_summary": gate.get("prepare_summary")}, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
+
     parser = argparse.ArgumentParser(description="Chauny XHS research workflow")
     parser.add_argument("topic", nargs="*", help="Research topic when --keywords is not provided")
     parser.add_argument("--keywords", type=str, help="Comma-separated search keywords")

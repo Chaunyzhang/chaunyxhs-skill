@@ -49,6 +49,7 @@ Before any real work, run:
 
 ```bash
 python scripts/status.py --json
+python scripts/xhs_prepare.py
 ```
 
 Interpretation:

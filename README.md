@@ -101,6 +101,18 @@ After you scan the QR code successfully, the repo reuses the saved cookies autom
 python scripts/status.py --json
 ```
 
+### 5. Prepare workflows
+
+```bash
+python scripts/xhs_prepare.py
+```
+
+This writes a persistent prepare-state for:
+
+- research
+- media extraction
+- optional transcription key presence
+
 You want to see:
 
 - `mcp_binary_installed: true`
@@ -193,14 +205,15 @@ For local video files, the script extracts audio locally first and then sends th
 If a weaker model is operating this repo, it should follow this order exactly:
 
 1. Run `python scripts/status.py --json`
-2. If binaries are missing, run `python scripts/setup.py`
-3. If login is missing, run `python scripts/login.py`
-4. If MCP is not running, run `python scripts/start.py`
-5. For research tasks, run `python scripts/xhs_research.py ...`
-6. For media tasks, run `python scripts/xhs_video_pipeline.py ...`
-7. For transcription tasks, run `python scripts/xhs_transcribe.py ...`
-8. If research search fails, retry once with `--search-provider web`
-9. If media extraction says `audio_not_found`, retry once with `--allow-video-fallback`
+2. Run `python scripts/xhs_prepare.py`
+3. If binaries are missing, run `python scripts/setup.py`
+4. If login is missing, run `python scripts/login.py`
+5. If MCP is not running, run `python scripts/start.py`
+6. For research tasks, run `python scripts/xhs_research.py ...`
+7. For media tasks, run `python scripts/xhs_video_pipeline.py ...`
+8. For transcription tasks, run `python scripts/xhs_transcribe.py ...`
+9. If research search fails, retry once with `--search-provider web`
+10. If media extraction says `audio_not_found`, retry once with `--allow-video-fallback`
 
 ## File map
 

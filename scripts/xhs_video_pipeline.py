@@ -6,7 +6,7 @@ from pathlib import Path
 
 import requests
 
-from xhs_core import extract_note_id, extract_note_media, normalize_note_url, preferred_cookies_path
+from xhs_core import capability_gate, extract_note_id, extract_note_media, normalize_note_url, preferred_cookies_path
 
 
 def pick_best_stream(streams: list[dict]) -> dict | None:
@@ -30,6 +30,11 @@ def download_media(url: str, output_path: Path) -> Path:
 
 
 def main() -> int:
+    gate = capability_gate("media")
+    if not gate.get("ready"):
+        print(json.dumps({"success": False, "message": gate.get("message"), "prepare_summary": gate.get("prepare_summary")}, ensure_ascii=False, indent=2))
+        return 1
+
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
     parser.add_argument("--output-dir", default=str(Path.cwd()))

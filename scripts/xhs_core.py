@@ -13,11 +13,13 @@ import time
 import urllib.parse
 import urllib.request
 import zipfile
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from playwright.sync_api import sync_playwright
+from prepare_state import read_prepare_state
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -32,6 +34,7 @@ GITHUB_API = f"https://api.github.com/repos/{MCP_REPO}/releases/latest"
 DATA_DIR = Path.home() / ".local" / "share" / "chaunyxhs-skill"
 BIN_DIR = DATA_DIR / "bin"
 COOKIES_PATH = DATA_DIR / "cookies.json"
+PREP_STATE = DATA_DIR / "prepare-state.json"
 REPORTS_DIR = Path.home() / "Documents" / "XHS-Research"
 
 LEGACY_DATA_DIRS = [
@@ -941,7 +944,7 @@ def render_research_report(
 
 def health_snapshot() -> dict[str, Any]:
     sync_cookies_into_data_dir()
-    return {
+    payload = {
         "platform": "-".join(detect_platform()),
         "data_dir": str(DATA_DIR),
         "cookies_path": preferred_cookies_path(),
@@ -951,3 +954,73 @@ def health_snapshot() -> dict[str, Any]:
         "mcp_running": check_mcp_health(),
         "xhs_logged_in": check_mcp_login(),
     }
+    payload["runtime_signature"] = runtime_signature_from_snapshot(payload)
+    payload["prepare_state"] = prepare_state_summary(payload)
+    payload["prepared_workflows_ready"] = payload["prepare_state"].get("prepared_workflows_ready", False)
+    payload["base_ready"] = all(
+        [
+            payload["mcp_binary_installed"],
+            payload["login_binary_installed"],
+            payload["cookies_exist"],
+            payload["mcp_running"],
+            payload["xhs_logged_in"],
+        ]
+    )
+    payload["all_ready"] = bool(payload["base_ready"] and payload["prepare_state"].get("state_exists") and payload["prepare_state"].get("signature_matches") and payload["prepared_workflows_ready"])
+    return payload
+
+
+def runtime_signature_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    signature = {
+        "mcp_binary_installed": snapshot.get("mcp_binary_installed"),
+        "login_binary_installed": snapshot.get("login_binary_installed"),
+        "cookies_exist": snapshot.get("cookies_exist"),
+        "mcp_running": snapshot.get("mcp_running"),
+        "xhs_logged_in": snapshot.get("xhs_logged_in"),
+        "cookies_path": snapshot.get("cookies_path"),
+    }
+    digest = hashlib.sha256(json.dumps(signature, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    return {**signature, "digest": digest}
+
+
+def prepare_state_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    state = read_prepare_state(PREP_STATE)
+    current_signature = runtime_signature_from_snapshot(snapshot)
+    saved_signature = state.get("runtime_signature", {}) if isinstance(state, dict) else {}
+    signature_matches = bool(saved_signature) and saved_signature.get("digest") == current_signature.get("digest")
+    capabilities = state.get("capabilities", {}) if isinstance(state, dict) else {}
+    return {
+        "state_file": str(PREP_STATE),
+        "state_exists": PREP_STATE.is_file(),
+        "updated_at": state.get("updated_at"),
+        "signature_matches": signature_matches,
+        "capabilities": capabilities,
+        "blockers": state.get("blockers", []),
+        "prepared_workflows_ready": bool(capabilities) and all(bool((capabilities.get(name) or {}).get("ready")) for name in ["research", "media"]),
+    }
+
+
+def capability_gate(capability: str) -> dict[str, Any]:
+    snapshot = health_snapshot()
+    prepare_summary = snapshot.get("prepare_state", {})
+    capabilities = prepare_summary.get("capabilities", {})
+    capability_state = capabilities.get(capability) if isinstance(capabilities, dict) else None
+    if not prepare_summary.get("state_exists"):
+        return {
+            "ready": False,
+            "message": f"No prepare-state file found. Run python scripts/xhs_prepare.py before using the {capability} workflow.",
+            "prepare_summary": prepare_summary,
+        }
+    if not prepare_summary.get("signature_matches"):
+        return {
+            "ready": False,
+            "message": f"Prepare-state no longer matches the current XHS environment. Rerun python scripts/xhs_prepare.py before using the {capability} workflow.",
+            "prepare_summary": prepare_summary,
+        }
+    if not isinstance(capability_state, dict) or not capability_state.get("ready"):
+        return {
+            "ready": False,
+            "message": (capability_state or {}).get("message") or f"{capability} is not prepared yet. Run python scripts/xhs_prepare.py.",
+            "prepare_summary": prepare_summary,
+        }
+    return {"ready": True, "message": "", "prepare_summary": prepare_summary}
